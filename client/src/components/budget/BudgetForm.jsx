@@ -79,7 +79,8 @@ const BudgetForm = ({ onSubmit, onCancel, initialData = null, isEdit = false }) 
 
       switch (watchPeriod) {
         case 'weekly':
-          periodLabel = `Week of ${now.toLocaleDateString()}`;
+          const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
+          periodLabel = `Week of ${weekStart.toLocaleDateString()}`;
           break;
         case 'monthly':
           periodLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -287,6 +288,36 @@ const BudgetForm = ({ onSubmit, onCancel, initialData = null, isEdit = false }) 
           </div>
         </div>
 
+        {/* Quick Budget Templates */}
+        {!isEdit && watch('period') === 'monthly' && (
+          <div className="form-group">
+            <label className="form-label">Quick Monthly Budgets</label>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { category: 'groceries', amount: 400, label: 'Groceries' },
+                { category: 'food', amount: 200, label: 'Dining Out' },
+                { category: 'transport', amount: 150, label: 'Transportation' },
+                { category: 'entertainment', amount: 100, label: 'Entertainment' },
+                { category: 'utilities', amount: 200, label: 'Utilities' },
+                { category: 'shopping', amount: 300, label: 'Shopping' }
+              ].map((template) => (
+                <button
+                  key={template.category}
+                  type="button"
+                  onClick={() => {
+                    setValue('category', template.category);
+                    setValue('amount', template.amount);
+                  }}
+                  className="p-3 text-left border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors"
+                >
+                  <div className="font-medium text-sm text-gray-900">{template.label}</div>
+                  <div className="text-xs text-gray-500">${template.amount}/month</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Budget Preview */}
         {watch('name') && watch('amount') && (
           <div className="form-group">
@@ -300,6 +331,9 @@ const BudgetForm = ({ onSubmit, onCancel, initialData = null, isEdit = false }) 
                   <h4 className="font-medium text-gray-900">{watch('name')}</h4>
                   <p className="text-sm text-gray-600">
                     {budgetService.getCategoryInfo(watch('category')).label} • {watch('period')}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {watch('startDate')} to {watch('endDate')}
                   </p>
                 </div>
                 <div className="text-right">
