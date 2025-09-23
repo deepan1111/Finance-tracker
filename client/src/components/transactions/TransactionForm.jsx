@@ -19,7 +19,8 @@ const TransactionForm = ({ onSubmit, onCancel, initialData = null, isEdit = fals
       category: '',
       paymentMethod: 'card',
       date: new Date().toISOString().split('T')[0],
-      tags: []
+      // Keep tags as a string in the form input; convert on submit
+      tags: ''
     }
   });
 
@@ -33,7 +34,10 @@ const TransactionForm = ({ onSubmit, onCancel, initialData = null, isEdit = fals
       reset({
         ...initialData,
         date: new Date(initialData.date).toISOString().split('T')[0],
-        tags: initialData.tags || []
+        // Normalize tags to a comma-separated string for the text input
+        tags: Array.isArray(initialData.tags)
+          ? initialData.tags.join(', ')
+          : (initialData.tags || '')
       });
     }
   }, [initialData, reset]);
@@ -48,7 +52,12 @@ const TransactionForm = ({ onSubmit, onCancel, initialData = null, isEdit = fals
         ...data,
         amount: parseFloat(data.amount),
         date: new Date(data.date).toISOString(),
-        tags: data.tags ? data.tags.split(',').map(tag => tag.trim()).filter(Boolean) : []
+        // Ensure tags is an array of trimmed non-empty strings
+        tags: Array.isArray(data.tags)
+          ? data.tags.map(tag => String(tag).trim()).filter(Boolean)
+          : (typeof data.tags === 'string' && data.tags.length > 0
+              ? data.tags.split(',').map(tag => tag.trim()).filter(Boolean)
+              : [])
       };
 
       await onSubmit(formattedData);

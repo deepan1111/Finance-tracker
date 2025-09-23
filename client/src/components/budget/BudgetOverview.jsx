@@ -1,7 +1,52 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { budgetService } from '../../services/budgetService';
 
 const BudgetOverview = ({ budgets = [], isLoading = false }) => {
+  const [warnings, setWarnings] = useState([]);
+  const [budgetProgress, setBudgetProgress] = useState([]);
+  const [isLoadingWarnings, setIsLoadingWarnings] = useState(false);
+
+  useEffect(() => {
+    const loadWarnings = async () => {
+      try {
+        setIsLoadingWarnings(true);
+        const response = await budgetService.getBudgetWarnings();
+        if (response.success) {
+          setWarnings(response.data.warnings);
+        }
+      } catch (error) {
+        console.error('Error loading budget warnings:', error);
+      } finally {
+        setIsLoadingWarnings(false);
+      }
+    };
+
+    loadWarnings();
+  }, [budgets]);
+
+  useEffect(() => {
+    // Calculate budget progress from budgets prop
+    if (budgets.length > 0) {
+      const progress = budgets.map(budget => {
+        const now = new Date();
+        const startDate = new Date(budget.startDate);
+        const endDate = new Date(budget.endDate);
+        const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+        const daysPassed = Math.ceil((now - startDate) / (1000 * 60 * 60 * 24));
+        const expectedProgress = Math.min(100, Math.max(0, (daysPassed / totalDays) * 100));
+        const actualProgress = budget.percentageSpent;
+        
+        return {
+          ...budget,
+          expectedProgress: Math.round(expectedProgress),
+          actualProgress: Math.round(actualProgress),
+          isOnTrack: actualProgress <= expectedProgress + 10, // Allow 10% variance
+          daysRemaining: budgetService.getDaysRemaining(budget.endDate)
+        };
+      });
+      setBudgetProgress(progress);
+    }
+  }, [budgets]);
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -169,18 +214,27 @@ const BudgetOverview = ({ budgets = [], isLoading = false }) => {
           </div>
         </div>
 
-        {/* Budget Alerts */}
+        {/* Budget Warnings */}
         <div className="card">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Budget Alerts
-            {alerts.length > 0 && (
+            Budget Warnings
+            {warnings.length > 0 && (
               <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-danger-100 text-danger-800">
-                {alerts.length}
+                {warnings.length}
               </span>
             )}
           </h3>
           
-          {alerts.length === 0 ? (
+          {isLoadingWarnings ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, index) => (
+                <div key={index} className="animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                  <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                </div>
+              ))}
+            </div>
+          ) : warnings.length === 0 ? (
             <div className="text-center py-6">
               <svg className="h-12 w-12 text-gray-300 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -189,33 +243,129 @@ const BudgetOverview = ({ budgets = [], isLoading = false }) => {
             </div>
           ) : (
             <div className="space-y-3">
-              {alerts.slice(0, 5).map((alert) => (
-                <div key={alert.id} className="flex items-start space-x-3 p-3 bg-yellow-50 rounded-lg">
-                  <div className={`flex-shrink-0 w-2 h-2 mt-2 rounded-full ${
-                    alert.status === 'exceeded' ? 'bg-danger-500' : 'bg-yellow-500'
-                  }`}></div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{alert.name}</p>
-                    <p className="text-xs text-gray-600">{alert.message}</p>
-                  </div>
-                  <div className="flex-shrink-0">
-                    <span className={`text-xs font-medium ${
-                      alert.status === 'exceeded' ? 'text-danger-600' : 'text-yellow-600'
-                    }`}>
-                      {Math.round(alert.percentageSpent)}%
-                    </span>
+              {warnings.slice(0, 5).map((warning) => (
+                <div key={warning.budgetId} className={`p-3 rounded-lg ${
+                  warning.severity === 'high' ? 'bg-danger-50 border border-danger-200' : 'bg-yellow-50 border border-yellow-200'
+                }`}>
+                  <div className="flex items-start space-x-3">
+                    <div className={`flex-shrink-0 w-2 h-2 mt-2 rounded-full ${
+                      warning.severity === 'high' ? 'bg-danger-500' : 'bg-yellow-500'
+                    }`}></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{warning.budgetName}</p>
+                      <p className="text-xs text-gray-600 mt-1">{warning.message}</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-xs text-gray-500">
+                          {warning.daysRemaining} days remaining
+                        </span>
+                        <span className={`text-xs font-medium ${
+                          warning.severity === 'high' ? 'text-danger-600' : 'text-yellow-600'
+                        }`}>
+                          {Math.round(warning.percentageSpent)}%
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
-              {alerts.length > 5 && (
+              {warnings.length > 5 && (
                 <p className="text-xs text-gray-500 text-center">
-                  +{alerts.length - 5} more alerts
+                  +{warnings.length - 5} more warnings
                 </p>
               )}
             </div>
           )}
         </div>
       </div>
+
+      {/* Budget Progress Tracking */}
+      {budgetProgress.length > 0 && (
+        <div className="card">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Budget Progress Tracking</h3>
+          <div className="space-y-4">
+            {budgetProgress.map((budget) => (
+              <div key={budget._id} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-3">
+                    <div 
+                      className="w-4 h-4 rounded-full"
+                      style={{ backgroundColor: budget.color || '#3B82F6' }}
+                    ></div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">{budget.name}</h4>
+                      <p className="text-sm text-gray-600">
+                        {budgetService.getCategoryInfo(budget.category).label} • {budget.period}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatCurrency(budget.spent)} / {formatCurrency(budget.amount)}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {budget.daysRemaining} days remaining
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Progress Bar */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-600">Progress</span>
+                    <span className="font-medium">{budget.actualProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        budget.status === 'exceeded' ? 'bg-danger-500' : 
+                        budget.status === 'warning' ? 'bg-yellow-500' : 'bg-primary-500'
+                      }`}
+                      style={{ width: `${Math.min(100, budget.actualProgress)}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* Expected vs Actual Progress */}
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">Expected:</span>
+                    <span className="ml-2 font-medium">{budget.expectedProgress}%</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Actual:</span>
+                    <span className={`ml-2 font-medium ${
+                      budget.isOnTrack ? 'text-success-600' : 'text-warning-600'
+                    }`}>
+                      {budget.actualProgress}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Status Indicator */}
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-2 h-2 rounded-full ${
+                      budget.status === 'exceeded' ? 'bg-danger-500' :
+                      budget.status === 'warning' ? 'bg-yellow-500' : 'bg-success-500'
+                    }`}></div>
+                    <span className={`text-sm font-medium ${
+                      budget.status === 'exceeded' ? 'text-danger-600' :
+                      budget.status === 'warning' ? 'text-yellow-600' : 'text-success-600'
+                    }`}>
+                      {budgetService.getStatusLabel(budget.status)}
+                    </span>
+                  </div>
+                  {!budget.isOnTrack && (
+                    <span className="text-xs text-warning-600">
+                      {budget.actualProgress > budget.expectedProgress ? 'Ahead of schedule' : 'Behind schedule'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

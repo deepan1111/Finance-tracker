@@ -256,6 +256,16 @@ export const budgetService = {
       }));
   },
 
+  // Get budget warnings from API
+  getBudgetWarnings: async () => {
+    try {
+      const response = await api.get('/budgets/warnings');
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  },
+
   // Get alert message
   getAlertMessage: (budget) => {
     const status = budgetService.getBudgetStatus(budget);

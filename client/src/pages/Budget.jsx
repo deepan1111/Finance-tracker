@@ -3,37 +3,36 @@ import Layout from '../components/layout/Layout';
 import BudgetForm from '../components/budget/BudgetForm';
 import BudgetList from '../components/budget/BudgetList';
 import BudgetOverview from '../components/budget/BudgetOverview';
+import BudgetProgress from '../components/budget/BudgetProgress';
+import BudgetTemplates from '../components/budget/BudgetTemplates';
+import BudgetInsights from '../components/budget/BudgetInsights';
+import BudgetGoals from '../components/budget/BudgetGoals';
+import BudgetNotifications from '../components/budget/BudgetNotifications';
+import BudgetComparison from '../components/budget/BudgetComparison';
 import { budgetService } from '../services/budgetService';
+import { useBudget } from '../hooks/useBudget';
 
 const Budget = () => {
-  const [budgets, setBudgets] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingBudget, setEditingBudget] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' or 'budgets'
-
-  // Load budgets
-  const loadBudgets = useCallback(async () => {
-    let isMounted = true;
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const response = await budgetService.getBudgets();
-      if (response.success && isMounted) {
-        setBudgets(response.data.budgets);
-      }
-    } catch (err) {
-      if (isMounted) setError(err.message || 'Failed to load budgets');
-    } finally {
-      if (isMounted) setIsLoading(false);
-    }
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [transactions, setTransactions] = useState([]);
+  
+  const {
+    budgets,
+    isLoading,
+    error,
+    loadBudgets,
+    createBudget,
+    updateBudget,
+    deleteBudget,
+    toggleBudgetStatus,
+    createMonthlyBudget,
+    getBudgetStats,
+    getBudgetAlerts,
+    clearError
+  } = useBudget();
 
   useEffect(() => {
     loadBudgets();
@@ -42,27 +41,21 @@ const Budget = () => {
   // Handle create budget
   const handleCreateBudget = async (budgetData) => {
     try {
-      const response = await budgetService.createBudget(budgetData);
-      if (response.success) {
-        setShowForm(false);
-        await loadBudgets();
-      }
+      await createBudget(budgetData);
+      setShowForm(false);
     } catch (err) {
-      setError(err.message || 'Failed to create budget');
+      // Error is handled by the hook
     }
   };
 
   // Handle edit budget
   const handleEditBudget = async (budgetData) => {
     try {
-      const response = await budgetService.updateBudget(editingBudget._id, budgetData);
-      if (response.success) {
-        setEditingBudget(null);
-        setShowForm(false);
-        await loadBudgets();
-      }
+      await updateBudget(editingBudget._id, budgetData);
+      setEditingBudget(null);
+      setShowForm(false);
     } catch (err) {
-      setError(err.message || 'Failed to update budget');
+      // Error is handled by the hook
     }
   };
 
@@ -70,12 +63,9 @@ const Budget = () => {
   const handleDeleteBudget = async (budgetId) => {
     if (window.confirm('Are you sure you want to delete this budget?')) {
       try {
-        const response = await budgetService.deleteBudget(budgetId);
-        if (response.success) {
-          setBudgets(prev => prev.filter(b => b._id !== budgetId));
-        }
+        await deleteBudget(budgetId);
       } catch (err) {
-        setError(err.message || 'Failed to delete budget');
+        // Error is handled by the hook
       }
     }
   };
@@ -83,19 +73,44 @@ const Budget = () => {
   // Toggle budget status
   const handleToggleBudget = async (budgetId) => {
     try {
-      const response = await budgetService.toggleBudgetStatus(budgetId);
-      if (response.success) {
-        setBudgets(prev =>
-          prev.map(budget =>
-            budget._id === budgetId
-              ? { ...budget, isActive: !budget.isActive }
-              : budget
-          )
-        );
-      }
+      await toggleBudgetStatus(budgetId);
     } catch (err) {
-      setError(err.message || 'Failed to toggle budget status');
+      // Error is handled by the hook
     }
+  };
+
+  // Handle template selection
+  const handleTemplateSelect = async (templateBudgets) => {
+    try {
+      for (const budgetData of templateBudgets) {
+        await createBudget(budgetData);
+      }
+      setShowTemplates(false);
+    } catch (err) {
+      // Error is handled by the hook
+    }
+  };
+
+  // Handle goal actions
+  const handleGoalCreate = async (goalData) => {
+    // In a real app, this would call an API
+    console.log('Creating goal:', goalData);
+  };
+
+  const handleGoalUpdate = async (goalId, goalData) => {
+    // In a real app, this would call an API
+    console.log('Updating goal:', goalId, goalData);
+  };
+
+  const handleGoalDelete = async (goalId) => {
+    // In a real app, this would call an API
+    console.log('Deleting goal:', goalId);
+  };
+
+  // Handle notification dismiss
+  const handleNotificationDismiss = (notificationId) => {
+    // In a real app, this would update the notification state
+    console.log('Dismissing notification:', notificationId);
   };
 
   // UI Helpers
@@ -122,46 +137,112 @@ const Budget = () => {
     );
   }
 
+  if (showTemplates) {
+    return (
+      <Layout>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Budget Templates</h1>
+              <p className="text-gray-600">Choose a pre-configured budget template</p>
+            </div>
+            <button
+              onClick={() => setShowTemplates(false)}
+              className="btn-outline"
+            >
+              Back to Budgets
+            </button>
+          </div>
+          <BudgetTemplates
+            onTemplateSelect={handleTemplateSelect}
+            isLoading={isLoading}
+          />
+        </div>
+      </Layout>
+    );
+  }
+
+  // Simple KPI calculations for the dashboard header
+  const activeBudgets = budgets.filter(b => b.isActive);
+  const totalBudgeted = activeBudgets.reduce((sum, b) => sum + b.amount, 0);
+  const totalSpent = activeBudgets.reduce((sum, b) => sum + b.spent, 0);
+  const totalRemaining = totalBudgeted - totalSpent;
+
   return (
     <Layout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Budget Management</h1>
-            <p className="text-gray-600">Set and track your spending limits</p>
+        {/* Dashboard Hero */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-500 via-indigo-600 to-indigo-700 text-white p-6">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div>
+              <h1 className="text-2xl font-bold">Budget Dashboard</h1>
+              <p className="opacity-90">Track budgets, spending and alerts at a glance</p>
+            </div>
+            <div className="flex space-x-3">
+              <button onClick={() => setShowTemplates(true)} className="inline-flex items-center rounded-full px-4 py-2 border border-white/50 text-white/95 hover:bg-white/10 transition">
+                <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                Templates
+              </button>
+              <button onClick={() => setShowForm(true)} className="inline-flex items-center rounded-full px-4 py-2 bg-white text-indigo-700 font-medium hover:bg-white/90 transition shadow-sm">
+                <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Create Budget
+              </button>
+            </div>
           </div>
-          <button onClick={() => setShowForm(true)} className="btn-primary">
-            <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            Create Budget
-          </button>
+          {/* KPI Strip */}
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="rounded-xl bg-white/15 backdrop-blur p-4 shadow-sm">
+              <p className="text-sm opacity-90">Total Budgeted</p>
+              <p className="text-2xl font-semibold">${totalBudgeted.toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl bg-white/15 backdrop-blur p-4 shadow-sm">
+              <p className="text-sm opacity-90">Total Spent</p>
+              <p className="text-2xl font-semibold">${totalSpent.toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl bg-white/15 backdrop-blur p-4 shadow-sm">
+              <p className="text-sm opacity-90">Remaining</p>
+              <p className="text-2xl font-semibold">${Math.max(0, totalRemaining).toLocaleString()}</p>
+            </div>
+          </div>
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'overview'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => setActiveTab('budgets')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'budgets'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              All Budgets ({budgets.length})
-            </button>
+        <div className="">
+          <nav className="flex overflow-x-auto gap-2 bg-gray-100 rounded-full p-1">
+            {[
+              { key: 'overview', label: 'Overview', icon: (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M13 5v6h6" /></svg>
+              )},
+              { key: 'budgets', label: `All Budgets (${budgets.length})`, icon: (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M3 12h18M3 17h18" /></svg>
+              )},
+              { key: 'insights', label: 'Insights', icon: (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3v18m-4-4l8-8m0 12l-8-8" /></svg>
+              )},
+              { key: 'goals', label: 'Goals', icon: (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6l-2 4H6l4 2-2 4 4-2 4 2-2-4 4-2h-4l-2-4z" /></svg>
+              )},
+              { key: 'comparison', label: 'Comparison', icon: (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h6v18H3zM15 9h6v12h-6z" /></svg>
+              )}
+            ].map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm transition ${
+                  activeTab === tab.key
+                    ? 'bg-white shadow text-gray-900'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
           </nav>
         </div>
 
@@ -181,10 +262,18 @@ const Budget = () => {
           </div>
         )}
 
+        {/* Notifications */}
+        <BudgetNotifications
+          budgets={budgets}
+          onNotificationDismiss={handleNotificationDismiss}
+        />
+
         {/* Tab Content */}
-        {activeTab === 'overview' ? (
+        {activeTab === 'overview' && (
           <BudgetOverview budgets={budgets} isLoading={isLoading} />
-        ) : (
+        )}
+
+        {activeTab === 'budgets' && (
           <>
             <BudgetList
               budgets={budgets}
@@ -213,59 +302,41 @@ const Budget = () => {
                   </svg>
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No budgets created yet</h3>
                   <p className="text-gray-600 mb-6">Start managing your finances by creating your first budget.</p>
-                  <button onClick={() => setShowForm(true)} className="btn-primary">
-                    <svg
-                      className="h-4 w-4 mr-2"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                    Create Your First Budget
-                  </button>
-                </div>
-
-                {/* Quick Templates */}
-                <div className="card">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Budget Templates</h3>
-                  <p className="text-gray-600 mb-6">Get started with these common budget categories:</p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {[
-                      { category: 'food', label: 'Food & Dining', amount: 600, color: '#EF4444' },
-                      { category: 'transport', label: 'Transportation', amount: 400, color: '#F97316' },
-                      { category: 'entertainment', label: 'Entertainment', amount: 300, color: '#EAB308' },
-                      { category: 'shopping', label: 'Shopping', amount: 500, color: '#22C55E' },
-                      { category: 'bills', label: 'Bills & Utilities', amount: 800, color: '#06B6D4' },
-                      { category: 'healthcare', label: 'Healthcare', amount: 200, color: '#3B82F6' }
-                    ].map((template) => (
-                      <button
-                        key={template.category}
-                        onClick={async () => {
-                          try {
-                            await budgetService.createMonthlyBudget(template.category, template.amount);
-                            await loadBudgets();
-                          } catch (err) {
-                            setError(err.message || 'Failed to create budget');
-                          }
-                        }}
-                        className="p-4 border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors text-left"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <div className="w-4 h-4 rounded-full" style={{ backgroundColor: template.color }}></div>
-                          <div>
-                            <h4 className="font-medium text-gray-900">{template.label}</h4>
-                            <p className="text-sm text-gray-600">${template.amount}/month</p>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
+                  <div className="flex justify-center space-x-3">
+                    <button onClick={() => setShowTemplates(true)} className="btn-outline">
+                      <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                      Use Template
+                    </button>
+                    <button onClick={() => setShowForm(true)} className="btn-primary">
+                      <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      Create Budget
+                    </button>
                   </div>
                 </div>
               </>
             )}
           </>
+        )}
+
+        {activeTab === 'insights' && (
+          <BudgetInsights budgets={budgets} transactions={transactions} />
+        )}
+
+        {activeTab === 'goals' && (
+          <BudgetGoals
+            budgets={budgets}
+            onGoalCreate={handleGoalCreate}
+            onGoalUpdate={handleGoalUpdate}
+            onGoalDelete={handleGoalDelete}
+          />
+        )}
+
+        {activeTab === 'comparison' && (
+          <BudgetComparison budgets={budgets} />
         )}
       </div>
     </Layout>
