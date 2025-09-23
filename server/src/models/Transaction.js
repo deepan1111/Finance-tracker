@@ -88,7 +88,7 @@ transactionSchema.virtual('formattedAmount').get(function() {
 // Static method to get user's balance
 transactionSchema.statics.getUserBalance = async function(userId) {
   const result = await this.aggregate([
-    { $match: { user: mongoose.Types.ObjectId(userId) } },
+    { $match: { user: new mongoose.Types.ObjectId(userId) } },
     {
       $group: {
         _id: '$type',
@@ -112,7 +112,7 @@ transactionSchema.statics.getCategoryBreakdown = async function(userId, type = '
   return await this.aggregate([
     { 
       $match: { 
-        user: mongoose.Types.ObjectId(userId),
+        user: new mongoose.Types.ObjectId(userId),
         type: type
       } 
     },

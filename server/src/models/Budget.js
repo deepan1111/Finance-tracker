@@ -59,7 +59,9 @@ const budgetSchema = new mongoose.Schema({
     default: '#3B82F6' // Default blue color
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
 // Index for better query performance
@@ -114,17 +116,95 @@ budgetSchema.statics.getUserActiveBudgets = async function(userId) {
 
 // Static method to update spent amounts based on transactions
 budgetSchema.statics.updateSpentAmounts = async function(userId, category = null) {
+  try {
+    const Transaction = mongoose.model('Transaction');
+    
+    // Get all active budgets for user
+    const budgets = await this.getUserActiveBudgets(userId);
+    
+    for (const budget of budgets) {
+      let spentAmount = 0;
+      
+      try {
+        if (budget.category === 'total') {
+          // For total budget, sum all expenses in the period
+          const result = await Transaction.aggregate([
+            {
+              $match: {
+                user: new mongoose.Types.ObjectId(userId),
+                type: 'expense',
+                date: {
+                  $gte: budget.startDate,
+                  $lte: budget.endDate
+                }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                total: { $sum: '$amount' }
+              }
+            }
+          ]);
+          spentAmount = result.length > 0 ? result[0].total : 0;
+        } else {
+          // For category budget, sum expenses in that category
+          const result = await Transaction.aggregate([
+            {
+              $match: {
+                user: new mongoose.Types.ObjectId(userId),
+                type: 'expense',
+                category: budget.category,
+                date: {
+                  $gte: budget.startDate,
+                  $lte: budget.endDate
+                }
+              }
+            },
+            {
+              $group: {
+                _id: null,
+                total: { $sum: '$amount' }
+              }
+            }
+          ]);
+          spentAmount = result.length > 0 ? result[0].total : 0;
+        }
+        
+        // Update budget spent amount
+        budget.spent = spentAmount;
+        await budget.save();
+      } catch (budgetError) {
+        console.error(`Error updating budget ${budget._id}:`, budgetError);
+        // Continue with other budgets even if one fails
+      }
+    }
+  } catch (error) {
+    console.error('Error in updateSpentAmounts:', error);
+    throw error;
+  }
+};
+
+// Static method to update budget when transaction is created/updated/deleted
+budgetSchema.statics.updateBudgetFromTransaction = async function(userId, transaction, action = 'create') {
   const Transaction = mongoose.model('Transaction');
   
-  // Build match criteria
-  const matchCriteria = { user: mongoose.Types.ObjectId(userId) };
-  if (category && category !== 'total') {
-    matchCriteria.category = category;
-  }
-
-  // Get all active budgets for user
-  const budgets = await this.getUserActiveBudgets(userId);
+  // Only process expense transactions
+  if (transaction.type !== 'expense') return;
   
+  // Get all active budgets that might be affected
+  const budgets = await this.find({
+    user: userId,
+    isActive: true,
+    $or: [
+      { category: transaction.category },
+      { category: 'total' }
+    ],
+    startDate: { $lte: transaction.date },
+    endDate: { $gte: transaction.date }
+  });
+  
+  // Update each affected budget
   for (const budget of budgets) {
     let spentAmount = 0;
     
@@ -133,7 +213,7 @@ budgetSchema.statics.updateSpentAmounts = async function(userId, category = null
       const result = await Transaction.aggregate([
         {
           $match: {
-            user: mongoose.Types.ObjectId(userId),
+            user: new mongoose.Types.ObjectId(userId),
             type: 'expense',
             date: {
               $gte: budget.startDate,
@@ -154,7 +234,7 @@ budgetSchema.statics.updateSpentAmounts = async function(userId, category = null
       const result = await Transaction.aggregate([
         {
           $match: {
-            user: mongoose.Types.ObjectId(userId),
+            user: new mongoose.Types.ObjectId(userId),
             type: 'expense',
             category: budget.category,
             date: {
@@ -177,6 +257,52 @@ budgetSchema.statics.updateSpentAmounts = async function(userId, category = null
     budget.spent = spentAmount;
     await budget.save();
   }
+};
+
+// Static method to get budget warnings and alerts
+budgetSchema.statics.getBudgetWarnings = async function(userId) {
+  // Update spent amounts first
+  await this.updateSpentAmounts(userId);
+  
+  const activeBudgets = await this.getUserActiveBudgets(userId);
+  const warnings = [];
+  
+  for (const budget of activeBudgets) {
+    const percentage = budget.percentageSpent;
+    const status = budget.status;
+    
+    if (status === 'exceeded') {
+      warnings.push({
+        budgetId: budget._id,
+        budgetName: budget.name,
+        category: budget.category,
+        status: 'exceeded',
+        percentageSpent: percentage,
+        amountSpent: budget.spent,
+        budgetAmount: budget.amount,
+        overspentAmount: budget.spent - budget.amount,
+        message: `You've exceeded your ${budget.name} budget by $${(budget.spent - budget.amount).toFixed(2)}`,
+        severity: 'high',
+        daysRemaining: budget.daysRemaining
+      });
+    } else if (status === 'warning') {
+      warnings.push({
+        budgetId: budget._id,
+        budgetName: budget.name,
+        category: budget.category,
+        status: 'warning',
+        percentageSpent: percentage,
+        amountSpent: budget.spent,
+        budgetAmount: budget.amount,
+        remainingAmount: budget.amount - budget.spent,
+        message: `You've spent ${Math.round(percentage)}% of your ${budget.name} budget`,
+        severity: 'medium',
+        daysRemaining: budget.daysRemaining
+      });
+    }
+  }
+  
+  return warnings;
 };
 
 // Pre-save middleware to validate dates

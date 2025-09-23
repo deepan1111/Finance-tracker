@@ -1,6 +1,7 @@
 const express = require('express');
 const { z } = require('zod');
 const Transaction = require('../models/Transaction');
+const Budget = require('../models/Budget');
 const { auth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -202,6 +203,18 @@ router.post('/', auth, async (req, res) => {
     // Validate request body
     const validatedData = transactionSchema.parse(req.body);
 
+    // Business rule: Prevent expenses that exceed total income
+    if (validatedData.type === 'expense') {
+      const balance = await Transaction.getUserBalance(req.user._id);
+      const remaining = (balance.income || 0) - (balance.expense || 0);
+      if (validatedData.amount > remaining) {
+        return res.status(400).json({
+          success: false,
+          message: 'Insufficient income. Add income before creating this expense.'
+        });
+      }
+    }
+
     // Create transaction
     const transaction = new Transaction({
       ...validatedData,
@@ -210,6 +223,9 @@ router.post('/', auth, async (req, res) => {
     });
 
     await transaction.save();
+
+    // Update budgets when transaction is created
+    await Budget.updateBudgetFromTransaction(req.user._id, transaction, 'create');
 
     res.status(201).json({
       success: true,
@@ -245,6 +261,36 @@ router.put('/:id', auth, async (req, res) => {
     // Validate request body
     const validatedData = updateTransactionSchema.parse(req.body);
 
+    // Business rule: Prevent updates that would make expenses exceed income
+    // Fetch existing transaction to compute projected balance
+    const existing = await Transaction.findOne({ _id: req.params.id, user: req.user._id });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+
+    // Determine new effective values
+    const newType = validatedData.type || existing.type;
+    const newAmount = validatedData.amount !== undefined ? validatedData.amount : existing.amount;
+
+    // Current balance includes the existing transaction already
+    const balance = await Transaction.getUserBalance(req.user._id);
+    let projectedRemaining = (balance.income || 0) - (balance.expense || 0);
+
+    // Remove impact of existing transaction
+    if (existing.type === 'income') projectedRemaining -= existing.amount;
+    if (existing.type === 'expense') projectedRemaining += existing.amount;
+
+    // Apply impact of new transaction
+    if (newType === 'income') projectedRemaining += newAmount;
+    if (newType === 'expense') projectedRemaining -= newAmount;
+
+    if (projectedRemaining < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'This change would make expenses exceed total income.'
+      });
+    }
+
     // Find and update transaction
     const transaction = await Transaction.findOneAndUpdate(
       { _id: req.params.id, user: req.user._id },
@@ -258,6 +304,9 @@ router.put('/:id', auth, async (req, res) => {
         message: 'Transaction not found'
       });
     }
+
+    // Update budgets when transaction is updated
+    await Budget.updateBudgetFromTransaction(req.user._id, transaction, 'update');
 
     res.json({
       success: true,
@@ -301,6 +350,9 @@ router.delete('/:id', auth, async (req, res) => {
         message: 'Transaction not found'
       });
     }
+
+    // Update budgets when transaction is deleted
+    await Budget.updateBudgetFromTransaction(req.user._id, transaction, 'delete');
 
     res.json({
       success: true,

@@ -38,22 +38,32 @@ router.get('/', auth, async (req, res) => {
 
     const budgets = await Budget.find(filter).sort({ startDate: -1 });
 
-    // Update spent amounts for all budgets
-    await Budget.updateSpentAmounts(req.user._id);
-    
-    // Refetch budgets with updated spent amounts
-    const updatedBudgets = await Budget.find(filter).sort({ startDate: -1 });
-
-    res.json({
-      success: true,
-      data: { budgets: updatedBudgets }
-    });
+    // Update spent amounts for all budgets (with error handling)
+    try {
+      await Budget.updateSpentAmounts(req.user._id);
+      
+      // Refetch budgets with updated spent amounts
+      const updatedBudgets = await Budget.find(filter).sort({ startDate: -1 });
+      
+      res.json({
+        success: true,
+        data: { budgets: updatedBudgets }
+      });
+    } catch (updateError) {
+      console.error('Error updating budget spent amounts:', updateError);
+      // Return budgets without updated spent amounts if update fails
+      res.json({
+        success: true,
+        data: { budgets }
+      });
+    }
 
   } catch (error) {
     console.error('Get budgets error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error getting budgets'
+      message: 'Server error getting budgets',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -97,11 +107,8 @@ router.get('/overview', auth, async (req, res) => {
     const totalSpent = activeBudgets.reduce((sum, budget) => sum + budget.spent, 0);
     const totalRemaining = totalBudgeted - totalSpent;
     
-    // Find budgets with alerts
-    const alerts = activeBudgets.filter(budget => {
-      const percentage = budget.percentageSpent;
-      return percentage >= budget.alertThreshold;
-    });
+    // Get detailed budget warnings
+    const warnings = await Budget.getBudgetWarnings(req.user._id);
 
     // Budget status breakdown
     const statusBreakdown = {
@@ -110,6 +117,25 @@ router.get('/overview', auth, async (req, res) => {
       exceeded: activeBudgets.filter(b => b.status === 'exceeded').length
     };
 
+    // Calculate monthly progress for each budget
+    const budgetProgress = activeBudgets.map(budget => {
+      const now = new Date();
+      const startDate = new Date(budget.startDate);
+      const endDate = new Date(budget.endDate);
+      const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+      const daysPassed = Math.ceil((now - startDate) / (1000 * 60 * 60 * 24));
+      const expectedProgress = Math.min(100, Math.max(0, (daysPassed / totalDays) * 100));
+      const actualProgress = budget.percentageSpent;
+      
+      return {
+        ...budget.toObject(),
+        expectedProgress: Math.round(expectedProgress),
+        actualProgress: Math.round(actualProgress),
+        isOnTrack: actualProgress <= expectedProgress + 10, // Allow 10% variance
+        daysRemaining: budget.daysRemaining
+      };
+    });
+
     res.json({
       success: true,
       data: {
@@ -117,17 +143,12 @@ router.get('/overview', auth, async (req, res) => {
           totalBudgeted,
           totalSpent,
           totalRemaining,
-          budgetCount: activeBudgets.length
+          budgetCount: activeBudgets.length,
+          averageSpent: activeBudgets.length > 0 ? totalSpent / activeBudgets.length : 0
         },
         statusBreakdown,
-        alerts: alerts.map(budget => ({
-          id: budget._id,
-          name: budget.name,
-          category: budget.category,
-          percentageSpent: budget.percentageSpent,
-          status: budget.status,
-          remaining: budget.remaining
-        }))
+        warnings,
+        budgetProgress
       }
     });
 
@@ -136,6 +157,27 @@ router.get('/overview', auth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error getting budget overview'
+    });
+  }
+});
+
+// @route   GET /api/budgets/warnings
+// @desc    Get budget warnings and alerts
+// @access  Private
+router.get('/warnings', auth, async (req, res) => {
+  try {
+    const warnings = await Budget.getBudgetWarnings(req.user._id);
+    
+    res.json({
+      success: true,
+      data: { warnings }
+    });
+
+  } catch (error) {
+    console.error('Get budget warnings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error getting budget warnings'
     });
   }
 });
