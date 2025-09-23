@@ -3,7 +3,7 @@ import axios from 'axios';
 // Create axios instance with base configuration
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
-  timeout: 10000,
+  timeout: 30000, // allow slower local servers before timing out
   headers: {
     'Content-Type': 'application/json',
   },
@@ -57,16 +57,23 @@ api.interceptors.response.use(
           // Server error
           console.error('Server error:', data.message);
           break;
+        case 429:
+          // Too many requests
+          console.warn('Rate limited:', data.message || 'Too many requests');
+          break;
         default:
           console.error('API Error:', data.message);
       }
       
       return Promise.reject(data);
     } else if (error.request) {
-      // Network error
+      // Request was made but no response received (timeout, CORS block, or network)
+      const isTimeout = error.code === 'ECONNABORTED';
       const networkError = {
         success: false,
-        message: 'Network error. Please check your connection.',
+        message: isTimeout
+          ? 'Request timed out. Please try again.'
+          : 'Network error. Please check your connection.',
       };
       return Promise.reject(networkError);
     } else {
