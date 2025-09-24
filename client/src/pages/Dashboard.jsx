@@ -32,11 +32,11 @@ const Layout = ({ children }) => {
           <div className="flex items-center justify-between mb-6 sm:mb-8">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-500/25">
-                <DollarSign className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+                {/* <DollarSign className="w-6 h-6 sm:w-7 sm:h-7 text-white" /> */}
               </div>
               {!sidebarCollapsed && (
                 <div>
-                  <h2 className="text-white font-bold text-sm sm:text-base">Other Level's</h2>
+                  
                   <p className="text-slate-400 text-xs">Finance Tracker</p>
                 </div>
               )}
